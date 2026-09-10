@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chalkline — AI Whiteboard Tutor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap');
+
+:root{
+  --board-bg:#FFFDF7;
+  --board-bg2:#FFFCF2;
+  --board-line:#EFEADA;
+  --ink:#26241F;
+  --ochre:#B8722E;
+  --highlight:#FCE896;
+  --sage:#5E7F6C;
+  --brick:#A84B39;
+  --panel:#FFFFFF;
+  --panel-border:#E7E2D2;
+  --muted:#9A937E;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;}
+body{
+  font-family:'Source Serif 4', Georgia, serif;
+  color:var(--ink);
+  height:100vh;
+  overflow:hidden;
+  background:var(--board-bg);
+}
+
+/* ===================== BOARD (full-bleed) ===================== */
+#board-wrap{
+  position:fixed;
+  inset:0;
+}
+#board{
+  width:100%;
+  height:100%;
+  display:block;
+  cursor:grab;
+}
+#board.grabbing{cursor:grabbing;}
+
+/* ===================== TOP BAR ===================== */
+.topbar{
+  position:fixed;
+  top:0;left:0;right:0;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  padding:18px 20px;
+  pointer-events:none;
+  z-index:20;
+}
+.topbar > *{pointer-events:auto;}
+.icon-btn{
+  width:40px;height:40px;
+  border-radius:50%;
+  border:none;
+  background:rgba(255,255,255,0.85);
+  backdrop-filter:blur(6px);
+  box-shadow:0 1px 4px rgba(0,0,0,0.08);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  font-size:16px;
+  color:var(--ink);
+}
+.icon-btn:hover{background:#fff;}
+.top-right-cluster{display:flex;gap:8px;}
+.status-chip{
+  font-family:'JetBrains Mono', monospace;
+  font-size:10.5px;
+  color:var(--muted);
+  background:rgba(255,255,255,0.7);
+  padding:6px 10px;
+  border-radius:20px;
+  align-self:center;
+  margin-right:4px;
+}
+
+/* ===================== ZOOM CONTROLS ===================== */
+.zoom-controls{
+  position:fixed;
+  top:70px;right:20px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  z-index:20;
+}
+.zoom-btn{
+  width:34px;height:34px;border-radius:8px;
+  border:none;background:rgba(255,255,255,0.85);backdrop-filter:blur(6px);
+  box-shadow:0 1px 4px rgba(0,0,0,0.08);
+  font-size:16px;cursor:pointer;color:var(--ink);
+}
+.zoom-btn:hover{background:#fff;}
+
+/* ===================== BOTTOM CAPTION ===================== */
+.caption-zone{
+  position:fixed;
+  left:0;right:0;
+  bottom:96px;
+  display:flex;
+  justify-content:center;
+  padding:0 120px;
+  pointer-events:none;
+  z-index:15;
+}
+.caption-text{
+  max-width:760px;
+  text-align:center;
+  font-size:17px;
+  line-height:1.55;
+  color:#3a372e;
+}
+.caption-text .fading{color:#b9b295;}
+
+/* ===================== BOTTOM-LEFT AVATAR CLUSTER ===================== */
+.avatar-cluster{
+  position:fixed;
+  left:22px;bottom:22px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  z-index:20;
+}
+.avatar{
+  width:52px;height:52px;
+  border-radius:50%;
+  background:#fff;
+  border:2px solid var(--panel-border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:24px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.08);
+  position:relative;
+}
+.avatar.speaking{border-color:var(--ochre);}
+.avatar.speaking::after{
+  content:'';
+  position:absolute; inset:-6px;
+  border-radius:50%;
+  border:2px solid var(--ochre);
+  opacity:0.5;
+  animation:ripple 1.6s ease-out infinite;
+}
+@keyframes ripple{0%{transform:scale(0.85);opacity:0.6;}100%{transform:scale(1.25);opacity:0;}}
+.cluster-btn{
+  width:38px;height:38px;border-radius:50%;
+  border:1px solid var(--panel-border);
+  background:#fff;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:15px;color:var(--ink);
+  box-shadow:0 1px 4px rgba(0,0,0,0.06);
+}
+.cluster-btn:hover{background:#faf8f2;}
+
+/* ===================== BOTTOM-RIGHT MIC ===================== */
+.mic-zone{
+  position:fixed;
+  right:22px;bottom:22px;
+  z-index:20;
+}
+.mic-btn{
+  width:56px;height:56px;border-radius:50%;
+  border:none;
+  background:var(--brick);
+  color:#fff;
+  font-size:20px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  box-shadow:0 3px 10px rgba(168,75,57,0.35);
+}
+.mic-btn.live{animation:mic-pulse 1.3s ease-in-out infinite;}
+.mic-btn.unsupported{background:#c9c4b5;box-shadow:none;cursor:not-allowed;}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(168,75,57,.45);}50%{box-shadow:0 0 0 10px rgba(168,75,57,0);}}
+
+/* ===================== TEXT ASK BAR (center-bottom, above caption) ===================== */
+.ask-zone{
+  position:fixed;
+  left:50%;
+  bottom:22px;
+  transform:translateX(-50%);
+  z-index:20;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  background:#fff;
+  border:1px solid var(--panel-border);
+  border-radius:30px;
+  padding:6px 6px 6px 18px;
+  box-shadow:0 3px 14px rgba(0,0,0,0.08);
+  width:min(520px, 44vw);
+}
+.ask-zone input{
+  flex:1;
+  border:none;outline:none;
+  font-family:'Source Serif 4', serif;
+  font-size:14px;
+  padding:8px 0;
+  background:transparent;
+}
+.ask-zone button{
+  width:36px;height:36px;border-radius:50%;
+  border:none;background:var(--ink);color:#fff;
+  cursor:pointer;font-size:14px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.ask-zone button:hover{background:var(--ochre);}
+
+/* ===================== SIDE PANEL (slide-out from hamburger) ===================== */
+.overlay{
+  position:fixed;inset:0;
+  background:rgba(20,18,12,0.25);
+  z-index:29;
+  opacity:0;pointer-events:none;
+  transition:opacity .2s ease;
+}
+.overlay.open{opacity:1;pointer-events:auto;}
+
+.side-panel{
+  position:fixed;
+  top:0;left:0;bottom:0;
+  width:360px;
+  background:var(--panel);
+  border-right:1px solid var(--panel-border);
+  z-index:30;
+  transform:translateX(-100%);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1);
+  display:flex;flex-direction:column;
+  box-shadow:8px 0 30px rgba(0,0,0,0.08);
+}
+.side-panel.open{transform:translateX(0);}
+
+.panel-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:18px 20px;border-bottom:1px solid var(--panel-border);
+}
+.panel-head h1{
+  font-size:19px;margin:0;font-weight:600;
+}
+.panel-head h1 em{color:var(--ochre);font-style:italic;}
+.panel-close{
+  background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);
+}
+
+.panel-body{flex:1;overflow-y:auto;}
+.p-section{padding:16px 20px;border-bottom:1px solid var(--panel-border);}
+.p-section h2{
+  font-family:'JetBrains Mono', monospace;
+  font-size:10.5px;letter-spacing:0.4px;color:var(--muted);
+  margin:0 0 10px 0;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.link-btn{
+  font-family:'JetBrains Mono', monospace;font-size:10px;
+  color:var(--ochre);background:none;border:none;cursor:pointer;
+}
+.link-btn:hover{text-decoration:underline;}
+
+.upload-zone{
+  border:1.5px dashed #d8d2bd;border-radius:6px;padding:14px;
+  text-align:center;cursor:pointer;font-size:13px;color:#7a7361;
+  transition:border-color .15s ease;
+}
+.upload-zone:hover{border-color:var(--ochre);}
+.upload-zone.has-file{border-style:solid;border-color:var(--sage);color:var(--ink);text-align:left;}
+.file-name{font-weight:600;font-size:12.5px;}
+.file-meta{font-family:'JetBrains Mono', monospace;font-size:10px;color:var(--muted);margin-top:3px;}
+#pdf-input{display:none;}
+
+.topic-input{
+  width:100%;padding:10px 11px;border:1px solid var(--panel-border);border-radius:6px;
+  font-family:'Source Serif 4', serif;font-size:13px;resize:none;height:56px;
+}
+.topic-input:focus{outline:none;border-color:var(--ochre);}
+select.topic-input{font-family:'Source Serif 4', serif;background:#fff;cursor:pointer;}
+.p-row{display:flex;gap:8px;margin-top:9px;}
+.p-btn{
+  flex:1;font-family:'Source Serif 4', serif;font-size:13px;
+  border:1px solid var(--ink);background:transparent;color:var(--ink);
+  padding:8px 10px;border-radius:5px;cursor:pointer;
+}
+.p-btn.primary{background:var(--ink);color:#fff;}
+.p-btn:hover{background:var(--ochre);border-color:var(--ochre);color:#fff;}
+
+.session-list{max-height:130px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;}
+.session-item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:7px 9px;border:1px solid var(--panel-border);border-radius:5px;
+  font-size:12px;cursor:pointer;
+}
+.session-item:hover{border-color:var(--ochre);}
+.session-item .s-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.session-item .s-date{font-family:'JetBrains Mono', monospace;font-size:9.5px;color:var(--muted);flex-shrink:0;margin-left:8px;}
+
+.transcript{padding:14px 20px;display:flex;flex-direction:column;gap:12px;}
+.msg{font-size:13px;line-height:1.5;}
+.msg .who{font-family:'JetBrains Mono', monospace;font-size:9.5px;letter-spacing:0.3px;display:block;margin-bottom:3px;}
+.msg.tutor .who{color:var(--ochre);}
+.msg.user .who{color:var(--sage);}
+.msg.user{color:#514d41;padding-left:9px;border-left:2px solid var(--sage);}
+.empty-note{font-size:12px;color:var(--muted);font-style:italic;}
+
+.quiz-card{background:#fdfcf7;border:1px solid var(--panel-border);border-radius:6px;padding:14px;margin-top:2px;}
+.quiz-q{font-size:13px;font-weight:600;margin-bottom:9px;line-height:1.4;}
+.quiz-opt{
+  display:block;width:100%;text-align:left;padding:8px 10px;margin-bottom:6px;
+  border:1px solid var(--panel-border);border-radius:5px;background:#fff;
+  font-family:'Source Serif 4', serif;font-size:12.5px;cursor:pointer;
+}
+.quiz-opt:hover{border-color:var(--ochre);}
+.quiz-opt.correct{background:#eaf1ec;border-color:var(--sage);}
+.quiz-opt.incorrect{background:#f6e9e5;border-color:var(--brick);}
+.quiz-opt:disabled{cursor:default;}
+.quiz-explain{font-size:12px;margin-top:9px;padding-top:9px;border-top:1px solid var(--panel-border);color:#514d41;display:none;}
+.quiz-explain.show{display:block;}
+
+::-webkit-scrollbar{width:7px;}
+::-webkit-scrollbar-thumb{background:#e4ddc8;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div id="board-wrap">
+  <canvas id="board"></canvas>
+</div>
+
+<div class="topbar">
+  <button class="icon-btn" id="btn-menu" title="Menu">☰</button>
+  <div class="top-right-cluster">
+    <div class="status-chip" id="status-line">idle</div>
+    <button class="icon-btn" id="btn-clear" title="Clear board">🗑</button>
+    <button class="icon-btn" id="btn-save" title="Save session">⬇</button>
+  </div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+  <button class="zoom-btn" id="zoom-out" title="Zoom out">−</button>
+  <button class="zoom-btn" id="zoom-reset" title="Reset view">⤾</button>
+</div>
+
+<div class="caption-zone">
+  <div class="caption-text" id="caption-text"></div>
+</div>
+
+<div class="avatar-cluster">
+  <div class="avatar" id="avatar">🧑‍🏫</div>
+  <button class="cluster-btn" id="btn-toggle-transcript" title="Show transcript">💬</button>
+  <button class="cluster-btn" id="btn-replay" title="Replay narration">🔊</button>
+</div>
+
+<div class="ask-zone">
+  <input type="text" id="ask-input" placeholder="Ask a follow-up…">
+  <button id="btn-ask" title="Send">➤</button>
+</div>
+
+<div class="mic-zone">
+  <button class="mic-btn" id="btn-mic" title="Talk to your tutor">🎙</button>
+</div>
+
+<!-- SIDE PANEL -->
+<div class="overlay" id="overlay"></div>
+<div class="side-panel" id="side-panel">
+  <div class="panel-head">
+    <h1>Chalk<em>line</em></h1>
+    <button class="panel-close" id="btn-panel-close">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="p-section">
+      <h2>Saved sessions <button class="link-btn" id="btn-new-session">new</button></h2>
+      <div class="session-list" id="session-list"><div class="empty-note">No saved sessions yet.</div></div>
+    </div>
+    <div class="p-section">
+      <h2>AI brain</h2>
+      <select class="topic-input" id="brain-select" style="height:auto;padding:9px 10px;">
+        <option value="claude">Claude</option>
+        <option value="openai">OpenAI GPT</option>
+        <option value="gemini">Google Gemini (free tier)</option>
+      </select>
+      <div id="claude-key-row" style="margin-top:8px;">
+        <input type="password" class="topic-input" id="claude-key-input" style="height:auto;padding:9px 10px;" placeholder="sk-ant-...">
+        <div class="file-meta" style="margin-top:6px;">Paste your Anthropic API key (from console.anthropic.com). It's kept only in your browser's memory for this tab — never saved, sent anywhere else, or visible to anyone but you.</div>
+      </div>
+      <div id="openai-key-row" style="display:none;margin-top:8px;">
+        <input type="password" class="topic-input" id="openai-key-input" style="height:auto;padding:9px 10px;" placeholder="sk-...">
+        <div class="file-meta" style="margin-top:6px;">Paste your OpenAI API key (from platform.openai.com). It's kept only in your browser's memory for this tab — never saved, sent anywhere else, or visible to anyone but you.</div>
+      </div>
+      <div id="gemini-key-row" style="display:none;margin-top:8px;">
+        <input type="password" class="topic-input" id="gemini-key-input" style="height:auto;padding:9px 10px;" placeholder="AIza...">
+        <div class="file-meta" style="margin-top:6px;">Paste your Gemini API key (free, from aistudio.google.com/apikey — no card needed). Kept only in your browser's memory for this tab.</div>
+      </div>
+    </div>
+    <div class="p-section">
+      <h2>Narrator voice</h2>
+      <select class="topic-input" id="voice-select" style="height:auto;padding:9px 10px;"></select>
+      <div class="file-meta" style="margin-top:6px;">Auto-picks the highest-quality voice your browser/OS offers. Chrome and Edge on Windows/Mac usually have the best options.</div>
+    </div>
+    <div class="p-section">
+      <h2>Source material</h2>
+      <div class="upload-zone" id="upload-zone">
+        Drop a PDF, or click to import a chapter, slide deck or notes.
+        <input type="file" id="pdf-input" accept="application/pdf">
+      </div>
+    </div>
+    <div class="p-section">
+      <h2>Ask to be taught</h2>
+      <textarea class="topic-input" id="topic-input" placeholder="e.g. 'Explain price elasticity of demand'"></textarea>
+      <div class="p-row">
+        <button class="p-btn primary" id="btn-teach">Teach this</button>
+        <button class="p-btn" id="btn-quiz">Quiz me</button>
+      </div>
+    </div>
+    <div class="p-section" style="border-bottom:none;">
+      <h2>Transcript</h2>
+      <div class="transcript" id="transcript" style="padding:0;"><div class="empty-note">Your lecture transcript and quiz questions will appear here as we go.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   INFINITE CANVAS: camera model
+   ========================================================= */
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+let viewW = 0, viewH = 0;
+const camera = { x: 500, y: 300, scale: 1 };
+
+/* Board "cursor": tracks the world-space offset for the NEXT block of content,
+   so each teaching turn writes to fresh space instead of overlapping prior
+   drawings. The model always emits commands in a local 0-1000 x 0-600 frame;
+   we translate every command by (boardCursor.x, boardCursor.y) before drawing,
+   then advance the cursor past the tallest content just written. */
+const boardCursor = { x: 0, y: 0, maxYThisBlock: 0 };
+const BLOCK_WIDTH = 1100; // horizontal spacing between successive teaching blocks
+const BLOCK_HEIGHT = 650; // vertical spacing when we wrap to a new row
+const BLOCKS_PER_ROW = 3;
+let blockCount = 0;
+
+function advanceBoardCursor(){
+  const col = blockCount % BLOCKS_PER_ROW;
+  const row = Math.floor(blockCount / BLOCKS_PER_ROW);
+  boardCursor.x = col * BLOCK_WIDTH;
+  boardCursor.y = row * BLOCK_HEIGHT;
+  blockCount++;
+}
+
+function panCameraToCursor(){
+  // Smoothly-ish center the camera on the new block (instant is fine here; keeps interaction simple)
+  camera.x = boardCursor.x + 500;
+  camera.y = boardCursor.y + 300;
+}
+
+function resizeCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  viewW = rect.width; viewH = rect.height;
+  redrawAll();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function worldToScreen(wx, wy){
+  return [(wx - camera.x) * camera.scale + viewW/2, (wy - camera.y) * camera.scale + viewH/2];
+}
+function screenToWorld(sx, sy){
+  return [(sx - viewW/2) / camera.scale + camera.x, (sy - viewH/2) / camera.scale + camera.y];
+}
+
+const INK = '#26241F';
+const OCHRE = '#B8722E';
+const SAGE = '#5E7F6C';
+const BRICK = '#A84B39';
+const HILITE = '#FCE896';
+const COLORS = { chalk:INK, ink:INK, ochre:OCHRE, sage:SAGE, brick:BRICK, highlight:HILITE };
+
+let drawnCommands = [];
+
+function drawBG(){
+  const grad = ctx.createLinearGradient(0,0,0,viewH);
+  grad.addColorStop(0, '#FFFDF7');
+  grad.addColorStop(1, '#FFFBEE');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,viewW,viewH);
+}
+
+function clearBoard(record=true){
+  if(record) drawnCommands = [];
+  drawBG();
+}
+
+function redrawAll(){
+  drawBG();
+  drawnCommands.forEach(cmd => renderCommand(cmd));
+}
+
+function sw(n){ return n * camera.scale; }
+
+function renderCommand(cmd){
+  const color = COLORS[cmd.color] || INK;
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+
+  switch(cmd.type){
+    case 'text': {
+      const fam = cmd.handwritten ? "'Caveat', cursive" : (cmd.mono ? "'JetBrains Mono', monospace" : "'Source Serif 4', serif");
+      const weight = cmd.weight || (cmd.handwritten ? 700 : 400);
+      const size = cmd.handwritten ? (cmd.size||36)*1.25 : (cmd.size||22);
+      ctx.font = `${weight} ${sw(size)}px ${fam}`;
+      ctx.textBaseline = 'alphabetic';
+      const [sx,sy] = worldToScreen(cmd.x, cmd.y);
+      ctx.fillText(cmd.text, sx, sy);
+      break;
+    }
+    case 'highlight-marker': {
+      const [x,y] = worldToScreen(cmd.x, cmd.y);
+      ctx.fillStyle = HILITE;
+      ctx.globalAlpha = 0.75;
+      ctx.fillRect(x, y, sw(cmd.w), sw(cmd.h || 40));
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'line': {
+      ctx.lineWidth = sw(cmd.width || 2.5);
+      const [x1,y1] = worldToScreen(cmd.x1, cmd.y1); const [x2,y2] = worldToScreen(cmd.x2, cmd.y2);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      break;
+    }
+    case 'arrow': {
+      ctx.lineWidth = sw(cmd.width || 2.5);
+      const [x1,y1] = worldToScreen(cmd.x1, cmd.y1); const [x2,y2] = worldToScreen(cmd.x2, cmd.y2);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      const angle = Math.atan2(y2-y1, x2-x1); const headLen = sw(cmd.headSize || 12);
+      ctx.beginPath(); ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen*Math.cos(angle - Math.PI/7), y2 - headLen*Math.sin(angle - Math.PI/7));
+      ctx.lineTo(x2 - headLen*Math.cos(angle + Math.PI/7), y2 - headLen*Math.sin(angle + Math.PI/7));
+      ctx.closePath(); ctx.fill();
+      break;
+    }
+    case 'rect': {
+      ctx.lineWidth = sw(cmd.width || 2.5);
+      const [x,y] = worldToScreen(cmd.x, cmd.y); const w = sw(cmd.w), h = sw(cmd.h);
+      if(cmd.fill){ ctx.globalAlpha = 0.10; ctx.fillRect(x,y,w,h); ctx.globalAlpha = 1; }
+      ctx.strokeRect(x,y,w,h);
+      break;
+    }
+    case 'circle': {
+      ctx.lineWidth = sw(cmd.width || 2.5);
+      const [x,y] = worldToScreen(cmd.x, cmd.y);
+      ctx.beginPath(); ctx.ellipse(x, y, sw(cmd.rx), sw(cmd.ry), 0, 0, Math.PI*2);
+      if(cmd.fill){ ctx.globalAlpha = 0.10; ctx.fill(); ctx.globalAlpha = 1; }
+      ctx.stroke();
+      break;
+    }
+    case 'curve': {
+      ctx.lineWidth = sw(cmd.width || 2.5);
+      const pts = cmd.points.map(p => worldToScreen(p[0], p[1]));
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for(let i=1;i<pts.length-1;i++){
+        const midX = (pts[i][0]+pts[i+1][0])/2, midY = (pts[i][1]+pts[i+1][1])/2;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], midX, midY);
+      }
+      ctx.stroke();
+      break;
+    }
+    case 'axes': {
+      ctx.lineWidth = sw(2);
+      const [ox,oy] = worldToScreen(cmd.x, cmd.y); const w = sw(cmd.w), h = sw(cmd.h);
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - h); ctx.moveTo(ox, oy); ctx.lineTo(ox + w, oy); ctx.stroke();
+      if(cmd.xlabel){ ctx.font = `${sw(15)}px 'JetBrains Mono', monospace`; ctx.fillText(cmd.xlabel, ox+w-sw(10)*cmd.xlabel.length*0.3, oy+sw(20)); }
+      if(cmd.ylabel){ ctx.save(); ctx.translate(ox-sw(18), oy-h+sw(10)); ctx.font = `${sw(15)}px 'JetBrains Mono', monospace`; ctx.fillText(cmd.ylabel,0,0); ctx.restore(); }
+      break;
+    }
+    case 'highlight': {
+      ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+      const [x,y] = worldToScreen(cmd.x, cmd.y);
+      ctx.fillRect(x, y, sw(cmd.w), sw(cmd.h || 26));
+      ctx.globalAlpha = 1;
+      break;
+    }
+  }
+}
+
+/* ---------- PAN / ZOOM ---------- */
+let isPanning = false, panStart=null, camStart=null;
+canvas.addEventListener('mousedown', (e)=>{ isPanning=true; canvas.classList.add('grabbing'); panStart=[e.clientX,e.clientY]; camStart={x:camera.x,y:camera.y}; });
+window.addEventListener('mousemove', (e)=>{
+  if(!isPanning) return;
+  camera.x = camStart.x - (e.clientX - panStart[0]) / camera.scale;
+  camera.y = camStart.y - (e.clientY - panStart[1]) / camera.scale;
+  redrawAll();
+});
+window.addEventListener('mouseup', ()=>{ isPanning=false; canvas.classList.remove('grabbing'); });
+canvas.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+  const [wx,wy] = screenToWorld(mx,my);
+  camera.scale = Math.min(3, Math.max(0.2, camera.scale * (e.deltaY>0?0.9:1.1)));
+  const [nx,ny] = screenToWorld(mx,my);
+  camera.x += (wx-nx); camera.y += (wy-ny);
+  redrawAll();
+}, {passive:false});
+document.getElementById('zoom-in').addEventListener('click', ()=>{ camera.scale=Math.min(3,camera.scale*1.2); redrawAll(); });
+document.getElementById('zoom-out').addEventListener('click', ()=>{ camera.scale=Math.max(0.2,camera.scale/1.2); redrawAll(); });
+document.getElementById('zoom-reset').addEventListener('click', ()=>{ camera.x=500;camera.y=300;camera.scale=1; redrawAll(); });
+document.getElementById('btn-clear').addEventListener('click', ()=>{ drawQueue=[]; camera.x=500;camera.y=300;camera.scale=1; blockCount=0; boardCursor.x=0; boardCursor.y=0; clearBoard(); });
+
+/* =========================================================
+   LIVE PEN + STROKE-BY-STROKE ANIMATION
+   ========================================================= */
+let drawQueue = [], drawing = false;
+
+function drawPen(x, y, angle){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle + Math.PI/4);
+  ctx.fillStyle = '#2A2A2A';
+  const s = 14;
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(s*0.35,s*0.35); ctx.lineTo(s*1.7,s*1.7-s*0.5); ctx.lineTo(s*1.35,s*2.0-s*0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#B8722E';
+  ctx.beginPath(); ctx.arc(s*0.45,s*0.45,3.2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function clearPen(){}
+
+function translateCommand(cmd, dx, dy){
+  const c = { ...cmd };
+  if('x' in c) c.x += dx;
+  if('y' in c) c.y += dy;
+  if('x1' in c) c.x1 += dx;
+  if('y1' in c) c.y1 += dy;
+  if('x2' in c) c.x2 += dx;
+  if('y2' in c) c.y2 += dy;
+  if(Array.isArray(c.points)) c.points = c.points.map(p => [p[0]+dx, p[1]+dy]);
+  return c;
+}
+
+function enqueueCommandsAtCursor(commands){
+  advanceBoardCursor();
+  const translated = commands.map(c => translateCommand(c, boardCursor.x, boardCursor.y));
+  panCameraToCursor();
+  redrawAll();
+  enqueueCommands(translated);
+}
+
+function enqueueCommands(commands){
+  drawQueue.push(...commands);
+  if(!drawing) processQueue();
+}
+function processQueue(){
+  if(drawQueue.length===0){ drawing=false; redrawAll(); return; }
+  drawing=true;
+  const cmd = drawQueue.shift();
+  animateCommand(cmd, ()=>{ drawnCommands.push(cmd); processQueue(); });
+}
+function animateCommand(cmd, onDone){
+  const duration = estimateDuration(cmd);
+  const start = performance.now();
+  function frame(now){
+    const t = Math.min(1,(now-start)/duration);
+    redrawAll();
+    renderPartialCommand(cmd, t);
+    if(t<1) requestAnimationFrame(frame); else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+function estimateDuration(cmd){
+  switch(cmd.type){
+    case 'text': return Math.min(2200, Math.max(500,(cmd.text||'').length*(cmd.handwritten?55:38)));
+    case 'line': case 'arrow': return 380;
+    case 'curve': return 700;
+    case 'rect': return 550;
+    case 'circle': return 550;
+    case 'axes': return 500;
+    case 'highlight': return 250;
+    case 'highlight-marker': return 420;
+    default: return 300;
+  }
+}
+function renderPartialCommand(cmd, t){
+  const color = COLORS[cmd.color] || INK;
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  switch(cmd.type){
+    case 'text': {
+      const full = cmd.text || '';
+      const nChars = Math.max(1, Math.round(full.length*t));
+      const partial = full.slice(0,nChars);
+      const fam = cmd.handwritten ? "'Caveat', cursive" : (cmd.mono ? "'JetBrains Mono', monospace" : "'Source Serif 4', serif");
+      const weight = cmd.weight || (cmd.handwritten ? 700 : 400);
+      const size = cmd.handwritten ? (cmd.size||36)*1.25 : (cmd.size||22);
+      ctx.font = `${weight} ${sw(size)}px ${fam}`;
+      const [sx,sy] = worldToScreen(cmd.x, cmd.y);
+      ctx.fillText(partial, sx, sy);
+      const w = ctx.measureText(partial).width;
+      drawPen(sx+w, sy, -Math.PI/2);
+      break;
+    }
+    case 'highlight-marker': {
+      const [x,y] = worldToScreen(cmd.x, cmd.y);
+      ctx.globalAlpha = 0.75; ctx.fillStyle = HILITE;
+      ctx.fillRect(x, y, sw(cmd.w)*t, sw(cmd.h||40));
+      ctx.globalAlpha = 1;
+      drawPen(x+sw(cmd.w)*t, y+sw(cmd.h||40)/2, 0);
+      break;
+    }
+    case 'line': case 'arrow': {
+      ctx.lineWidth = sw(cmd.width||2.5);
+      const [x1,y1]=worldToScreen(cmd.x1,cmd.y1); const [x2,y2]=worldToScreen(cmd.x2,cmd.y2);
+      const cx=x1+(x2-x1)*t, cy=y1+(y2-y1)*t;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(cx,cy); ctx.stroke();
+      if(cmd.type==='arrow' && t>=0.98){
+        const angle=Math.atan2(y2-y1,x2-x1); const headLen=sw(cmd.headSize||12);
+        ctx.beginPath(); ctx.moveTo(x2,y2);
+        ctx.lineTo(x2-headLen*Math.cos(angle-Math.PI/7), y2-headLen*Math.sin(angle-Math.PI/7));
+        ctx.lineTo(x2-headLen*Math.cos(angle+Math.PI/7), y2-headLen*Math.sin(angle+Math.PI/7));
+        ctx.closePath(); ctx.fill();
+      }
+      drawPen(cx,cy,Math.atan2(y2-y1,x2-x1));
+      break;
+    }
+    case 'curve': {
+      ctx.lineWidth = sw(cmd.width||2.5);
+      const pts = cmd.points.map(p=>worldToScreen(p[0],p[1]));
+      const totalSegs = pts.length-1, segFloat = t*totalSegs;
+      const segIdx = Math.min(totalSegs-1, Math.floor(segFloat)), segT = segFloat-segIdx;
+      ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+      for(let i=1;i<=segIdx;i++){
+        const midX=(pts[i][0]+pts[Math.min(i+1,pts.length-1)][0])/2, midY=(pts[i][1]+pts[Math.min(i+1,pts.length-1)][1])/2;
+        ctx.quadraticCurveTo(pts[i][0],pts[i][1],midX,midY);
+      }
+      let penX=pts[segIdx][0], penY=pts[segIdx][1];
+      if(pts[segIdx+1]){
+        penX = pts[segIdx][0]+(pts[segIdx+1][0]-pts[segIdx][0])*segT;
+        penY = pts[segIdx][1]+(pts[segIdx+1][1]-pts[segIdx][1])*segT;
+        ctx.lineTo(penX,penY);
+      }
+      ctx.stroke();
+      drawPen(penX,penY,0);
+      break;
+    }
+    case 'rect': {
+      ctx.lineWidth = sw(cmd.width||2.5);
+      const [x,y]=worldToScreen(cmd.x,cmd.y); const w=sw(cmd.w), h=sw(cmd.h);
+      const perim=2*(w+h), drawn=perim*t;
+      ctx.beginPath(); let remaining=drawn, px=x, py=y; ctx.moveTo(px,py);
+      const segs=[[w,0],[0,h],[-w,0],[0,-h]];
+      for(const [dx,dy] of segs){
+        const len=Math.hypot(dx,dy), use=Math.min(len,remaining), frac=use/len;
+        px+=dx*frac; py+=dy*frac; ctx.lineTo(px,py); remaining-=use;
+        if(remaining<=0) break;
+      }
+      ctx.stroke(); drawPen(px,py,0);
+      break;
+    }
+    case 'circle': {
+      ctx.lineWidth = sw(cmd.width||2.5);
+      const [x,y]=worldToScreen(cmd.x,cmd.y); const rx=sw(cmd.rx), ry=sw(cmd.ry);
+      ctx.beginPath(); ctx.ellipse(x,y,rx,ry,0,-Math.PI/2,-Math.PI/2+t*Math.PI*2); ctx.stroke();
+      const ang=-Math.PI/2+t*Math.PI*2;
+      drawPen(x+rx*Math.cos(ang), y+ry*Math.sin(ang), ang+Math.PI/2);
+      break;
+    }
+    case 'axes': {
+      ctx.lineWidth = sw(2);
+      const [ox,oy]=worldToScreen(cmd.x,cmd.y); const w=sw(cmd.w), h=sw(cmd.h);
+      const total=w+h, drawn=total*t;
+      ctx.beginPath(); ctx.moveTo(ox,oy);
+      const yLen=Math.min(h,drawn); ctx.lineTo(ox,oy-yLen);
+      let penX=ox, penY=oy-yLen;
+      if(drawn>h){ ctx.moveTo(ox,oy); const xLen=Math.min(w,drawn-h); ctx.lineTo(ox+xLen,oy); penX=ox+xLen; penY=oy; }
+      ctx.stroke();
+      if(t>=0.99){
+        if(cmd.xlabel){ ctx.font=`${sw(15)}px 'JetBrains Mono', monospace`; ctx.fillText(cmd.xlabel, ox+w-sw(10)*cmd.xlabel.length*0.3, oy+sw(20)); }
+        if(cmd.ylabel){ ctx.save(); ctx.translate(ox-sw(18), oy-h+sw(10)); ctx.font=`${sw(15)}px 'JetBrains Mono', monospace`; ctx.fillText(cmd.ylabel,0,0); ctx.restore(); }
+      }
+      drawPen(penX,penY,0);
+      break;
+    }
+    case 'highlight': {
+      ctx.globalAlpha = 0.18*t;
+      const [x,y]=worldToScreen(cmd.x,cmd.y);
+      ctx.fillRect(x,y,sw(cmd.w)*t, sw(cmd.h||26));
+      ctx.globalAlpha=1;
+      break;
+    }
+  }
+}
+
+/* =========================================================
+   VOICE: speech synthesis (out, captions) + recognition (in)
+
+   Browser TTS has no truly natural option without a paid API,
+   so this picks the best available system/browser voice by a
+   quality heuristic, and improves cadence by speaking sentence
+   by sentence (with small inter-sentence pauses) rather than as
+   one long utterance, which reduces the flat/rushed rambling
+   that a single long SpeechSynthesisUtterance tends to produce.
+   ========================================================= */
+const avatar = document.getElementById('avatar');
+const captionText = document.getElementById('caption-text');
+let currentUtteranceText = '';
+let currentSpeechToken = 0; // increments to cancel in-flight sentence queues
+
+/* ---- voice selection ---- */
+let bestVoice = null;
+let voicesReady = false;
+let voiceListInitialized = false;
+
+function scoreVoice(v){
+  let score = 0;
+  const name = v.name || '';
+  // Highest-quality signals first (these names appear in Chrome/Edge/Safari on most OSes)
+  if(/Natural/i.test(name)) score += 100;
+  if(/Neural/i.test(name)) score += 95;
+  if(/Premium/i.test(name)) score += 90;
+  if(/Enhanced/i.test(name)) score += 85;
+  if(/Google/i.test(name)) score += 70;
+  if(/Microsoft.*Online/i.test(name)) score += 65;
+  if(/Siri/i.test(name)) score += 60;
+  // Prefer local (no network dependency, more reliable in this sandboxed context)
+  if(v.localService) score += 8;
+  // Prefer standard English varieties, mild preference for US/GB over others
+  if(/^en-US$/i.test(v.lang)) score += 6;
+  else if(/^en-GB$/i.test(v.lang)) score += 5;
+  else if(/^en/i.test(v.lang)) score += 3;
+  // Slight preference for voices whose names suggest a warmer/female timbre often
+  // tuned for narration (this is a rough heuristic, not a guarantee)
+  if(/Samantha|Aria|Jenny|Libby|Sonia|Serena/i.test(name)) score += 4;
+  return score;
+}
+
+function pickBestVoice(){
+  const voices = window.speechSynthesis.getVoices();
+  if(!voices || voices.length === 0) return null;
+  const english = voices.filter(v => /^en/i.test(v.lang));
+  const pool = english.length ? english : voices;
+  pool.sort((a,b) => scoreVoice(b) - scoreVoice(a));
+  return pool[0] || null;
+}
+
+function refreshVoiceList(){
+  bestVoice = pickBestVoice();
+  voicesReady = !!bestVoice;
+  populateVoiceDropdown();
+}
+
+if('speechSynthesis' in window){
+  // Chrome loads voices asynchronously; Safari/Firefox often have them immediately.
+  refreshVoiceList();
+  window.speechSynthesis.onvoiceschanged = refreshVoiceList;
+  // Fallback poll in case onvoiceschanged never fires (some embedded browser contexts)
+  let pollTries = 0;
+  const pollInterval = setInterval(()=>{
+    pollTries++;
+    if(voicesReady || pollTries > 20){ clearInterval(pollInterval); return; }
+    refreshVoiceList();
+  }, 250);
+}
+
+function populateVoiceDropdown(){
+  const sel = document.getElementById('voice-select');
+  if(!sel) return;
+  const voices = window.speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+  const pool = voices.length ? voices : window.speechSynthesis.getVoices();
+  if(!pool.length) return;
+  const currentVal = sel.value;
+  sel.innerHTML = '';
+  pool.sort((a,b)=> scoreVoice(b)-scoreVoice(a)).forEach(v=>{
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.name + (v.localService ? '' : ' (network)');
+    sel.appendChild(opt);
+  });
+  // Restore user's manual choice if they made one, else select bestVoice
+  if(currentVal && pool.some(v=>v.name===currentVal)){
+    sel.value = currentVal;
+  } else if(bestVoice){
+    sel.value = bestVoice.name;
+  }
+}
+
+function getSelectedVoice(){
+  const sel = document.getElementById('voice-select');
+  const voices = window.speechSynthesis.getVoices();
+  if(sel && sel.value){
+    const chosen = voices.find(v => v.name === sel.value);
+    if(chosen) return chosen;
+  }
+  return bestVoice;
+}
+
+/* ---- sentence-chunked speaking for better cadence ---- */
+
+function splitIntoSpeechChunks(text){
+  // Split on sentence boundaries, keeping punctuation; also break very long
+  // sentences at commas/semicolons so no single utterance runs on too long.
+  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
+  const chunks = [];
+  for(let s of sentences){
+    s = s.trim();
+    if(!s) continue;
+    if(s.length > 160){
+      const parts = s.split(/(?<=[,;:])\s+/);
+      let buf = '';
+      for(const p of parts){
+        if((buf + ' ' + p).trim().length > 160 && buf){ chunks.push(buf.trim()); buf = p; }
+        else buf = (buf ? buf + ' ' : '') + p;
+      }
+      if(buf.trim()) chunks.push(buf.trim());
+    } else {
+      chunks.push(s);
+    }
+  }
+  return chunks;
+}
+
+function renderCaption(fullText, chunkStartIndex, chunkText){
+  const said = fullText.slice(0, chunkStartIndex);
+  const windowStart = Math.max(0, said.length - 70);
+  const fadedPart = fullText.slice(windowStart, chunkStartIndex);
+  const freshPart = chunkText;
+  captionText.innerHTML = `<span class="fading">${escapeHtml(fadedPart)}</span><span>${escapeHtml(freshPart)}</span>`;
+}
+
+function speak(text){
+  if(!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const myToken = ++currentSpeechToken;
+  currentUtteranceText = text;
+  const chunks = splitIntoSpeechChunks(text);
+  let searchPos = 0;
+  const chunkOffsets = chunks.map(c => {
+    const idx = text.indexOf(c, searchPos);
+    searchPos = idx >= 0 ? idx + c.length : searchPos;
+    return idx >= 0 ? idx : searchPos;
+  });
+
+  const voice = getSelectedVoice();
+
+  function speakChunk(i){
+    if(myToken !== currentSpeechToken) return; // superseded by a newer speak() call
+    if(i >= chunks.length){ avatar.classList.remove('speaking'); return; }
+    const utter = new SpeechSynthesisUtterance(chunks[i]);
+    utter.rate = 0.96;
+    utter.pitch = 1.0;
+    if(voice) utter.voice = voice;
+    renderCaption(text, chunkOffsets[i], chunks[i]);
+    utter.onstart = () => avatar.classList.add('speaking');
+    utter.onend = () => {
+      if(myToken !== currentSpeechToken) return;
+      // small natural pause between sentences; slightly longer after a sentence
+      // that ends with a question mark, to mimic a lecturer pausing for effect
+      const pause = /\?\s*$/.test(chunks[i]) ? 260 : 140;
+      setTimeout(()=> speakChunk(i+1), pause);
+    };
+    utter.onerror = () => { if(myToken === currentSpeechToken) speakChunk(i+1); };
+    window.speechSynthesis.speak(utter);
+  }
+  speakChunk(0);
+}
+document.getElementById('btn-replay').addEventListener('click', ()=>{ if(currentUtteranceText) speak(currentUtteranceText); });
+
+function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+let recognition=null, listening=false;
+const micBtn = document.getElementById('btn-mic');
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(SpeechRec){
+  recognition = new SpeechRec();
+  recognition.continuous=false; recognition.interimResults=false; recognition.lang='en-US';
+  recognition.onresult = (e)=>{ const text=e.results[0][0].transcript; handleAsk(text); };
+  recognition.onend = ()=>{ listening=false; micBtn.classList.remove('live'); };
+  recognition.onerror = ()=>{ listening=false; micBtn.classList.remove('live'); };
+} else {
+  micBtn.classList.add('unsupported');
+  micBtn.title = 'Voice input not supported in this browser';
+}
+micBtn.addEventListener('click', ()=>{
+  if(!recognition) return;
+  if(listening){ recognition.stop(); return; }
+  listening=true; micBtn.classList.add('live'); recognition.start();
+});
+
+/* =========================================================
+   PDF IMPORT
+   ========================================================= */
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfText = '', pdfFileName = '';
+const uploadZone = document.getElementById('upload-zone');
+const pdfInput = document.getElementById('pdf-input');
+uploadZone.addEventListener('click', ()=> pdfInput.click());
+uploadZone.addEventListener('dragover', (e)=> e.preventDefault());
+uploadZone.addEventListener('drop', (e)=>{ e.preventDefault(); if(e.dataTransfer.files.length) handlePdfFile(e.dataTransfer.files[0]); });
+pdfInput.addEventListener('change', (e)=>{ if(e.target.files.length) handlePdfFile(e.target.files[0]); });
+
+async function handlePdfFile(file){
+  if(file.type !== 'application/pdf'){ alert('Please choose a PDF file.'); return; }
+  setStatus('reading pdf…');
+  pdfFileName = file.name;
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  let fullText = '';
+  const maxPages = Math.min(pdf.numPages, 40);
+  for(let i=1;i<=maxPages;i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += `\n\n[Page ${i}]\n` + content.items.map(it=>it.str).join(' ');
+  }
+  pdfText = fullText;
+  uploadZone.classList.add('has-file');
+  uploadZone.innerHTML = `<div class="file-name">📄 ${escapeHtml(pdfFileName)}</div><div class="file-meta">${pdf.numPages} pages · text extracted</div>`;
+  setStatus('pdf ready');
+}
+
+/* =========================================================
+   UI HELPERS
+   ========================================================= */
+const transcriptEl = document.getElementById('transcript');
+const statusLine = document.getElementById('status-line');
+function setStatus(s){ statusLine.textContent = s; }
+
+function addTranscriptMsg(who, text){
+  const empty = transcriptEl.querySelector('.empty-note');
+  if(empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = `msg ${who}`;
+  div.innerHTML = `<span class="who">${who==='tutor'?'TUTOR':'YOU'}</span>${escapeHtml(text)}`;
+  transcriptEl.appendChild(div);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function addQuizCard(quiz){
+  const empty = transcriptEl.querySelector('.empty-note');
+  if(empty) empty.remove();
+  const card = document.createElement('div');
+  card.className = 'quiz-card';
+  const qEl = document.createElement('div'); qEl.className='quiz-q'; qEl.textContent = quiz.question;
+  card.appendChild(qEl);
+  const explainEl = document.createElement('div'); explainEl.className='quiz-explain'; explainEl.textContent = quiz.explanation;
+  quiz.options.forEach((opt, idx)=>{
+    const b = document.createElement('button'); b.className='quiz-opt'; b.textContent = opt;
+    b.addEventListener('click', ()=>{
+      const buttons = card.querySelectorAll('.quiz-opt');
+      buttons.forEach(bb=>bb.disabled=true);
+      if(idx===quiz.correctIndex){ b.classList.add('correct'); }
+      else { b.classList.add('incorrect'); buttons[quiz.correctIndex].classList.add('correct'); }
+      explainEl.classList.add('show');
+      // Route the quiz result through the normal teaching turn so roles keep
+      // alternating correctly (Anthropic's API rejects consecutive same-role
+      // turns) and so the tutor can actually react to right/wrong answers.
+      const resultNote = idx===quiz.correctIndex ? 'this was correct' : 'this was incorrect';
+      runTeachingTurn(
+        `[Quiz answer] For "${quiz.question}", I selected "${opt}" — ${resultNote}. Briefly react to this and then continue per the pacing rules.`,
+        `Answered: "${opt}"`
+      );
+    });
+    card.appendChild(b);
+  });
+  card.appendChild(explainEl);
+  transcriptEl.appendChild(card);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+/* =========================================================
+   AI BACKEND CALL — supports Claude (default, no key) or
+   OpenAI GPT (needs the user's own API key)
+   ========================================================= */
+const SYSTEM_PROMPT = `You are an expert university lecturer operating a whiteboard tutoring tool called Chalkline.
+You teach at genuine university level: rigorous, first-principles, precise terminology, no hand-waving.
+
+You must respond with ONLY a JSON object (no markdown fences, no prose outside the JSON) with this exact shape:
+{
+  "speech": "the spoken explanation, natural spoken lecture language for text-to-speech (spell out symbols, e.g. 'delta' not the character)",
+  "board": [ ...array of drawing command objects... ],
+  "quiz": null OR { "question":"...", "options":["...","...","...","..."], "correctIndex":0, "explanation":"..." }
+}
+
+Drawing commands use a normalized coordinate space of x:0-1000, y:0-600 (y increasing downward). Each teaching turn is automatically placed into its OWN fresh, non-overlapping area of an infinite canvas by the app — you do NOT need to avoid prior content or track what's already drawn; always compose your "board" array as if starting on a blank 1000x600 page.
+Available command types:
+- {"type":"text","x":..,"y":..,"text":"...","size":22,"color":"ink|ochre|sage|brick","mono":false,"handwritten":false,"weight":400}  — set "handwritten":true ONLY for section headings/titles (renders in a marker-style script font, larger)
+- {"type":"highlight-marker","x":..,"y":..,"w":..,"h":40,"color":"highlight"} — draw this RIGHT AFTER a handwritten heading, positioned behind/under it (same x/y roughly, w spanning the heading width) to look like a yellow highlighter stroke drawn under the title
+- {"type":"line","x1":..,"y1":..,"x2":..,"y2":..,"color":"ink","width":2.5}
+- {"type":"arrow","x1":..,"y1":..,"x2":..,"y2":..,"color":"ochre","width":2.5}
+- {"type":"rect","x":..,"y":..,"w":..,"h":..,"color":"ink","fill":false}
+- {"type":"circle","x":..,"y":..,"rx":..,"ry":..,"color":"ink","fill":false}
+- {"type":"curve","points":[[x,y],[x,y],...],"color":"sage","width":2.5}
+- {"type":"axes","x":..,"y":..,"w":..,"h":..,"xlabel":"Quantity","ylabel":"Price"}
+- {"type":"highlight","x":..,"y":..,"w":..,"h":26,"color":"ochre"}
+
+The board is plain white/cream — colors are: "ink" near-black body text, "ochre" warm amber for emphasis, "sage" muted green for correct/positive, "brick" muted red for warnings/mistakes, "highlight" pale yellow (used only by highlight-marker).
+
+Layout pattern: start with ONE handwritten title near the top-left (around x:90,y:120) sized around 30, followed immediately by a highlight-marker behind it. Build the explanation below in normal text/diagrams/equations. Keep each turn's board content SHORT — at most 8-12 commands — because each turn should cover only a small, single idea (see pacing rules below), not a full section. For math: mono text, one step per line, 40+ units apart vertically. For diagrams: axes then curve/line then labels.
+
+PACING RULES (strict — this is the most important behavioural constraint):
+- Teach in SMALL bites: explain ONE definition, ONE step of a derivation, or ONE component of a concept per turn — not a whole topic, not even a whole "section". Think 2-4 sentences of speech per turn, occasionally a bit more only when a single idea genuinely needs it (e.g. deriving one formula).
+- After every single bite, STOP and either ask a real comprehension-check question about exactly what you just said, or explicitly ask "should we continue?" / "want me to go on to the next part?". Never chain multiple ideas together before checking in.
+- Do not lecture for multiple paragraphs uninterrupted. If you notice your "speech" is getting long, cut it — split the idea and save the rest for the next turn.
+- If the student's message is answering a comprehension check or a follow-up, respond conversationally and briefly — correct misconceptions precisely, pointing out exactly where reasoning went wrong — then again stop and check in before adding the next bite. Only add new "board" content if there's something new worth drawing (an empty "board" array is fine if you're just discussing what's already up).
+- If the student explicitly says "continue", "go on", "yes", or similar in response to a check-in, proceed with exactly the next single bite — still short, still followed by another check-in.
+- Only include "quiz" when the student explicitly asks to be quizzed, or it's a natural checkpoint fitting their request. Otherwise null.
+- If source document text is provided, ground explanations in it and reference it directly (e.g. "as your notes on page 3 show...").`;
+
+let conversationHistory = [];
+let aiBrain = 'claude'; // 'claude' | 'openai'
+let openaiApiKey = '';
+let claudeApiKey = ''; // only needed when running outside claude.ai's sandbox
+let geminiApiKey = '';
+const runningInsideClaudeAi = /claude\.ai$/.test(window.location.hostname) || window.location.hostname === '';
+
+document.getElementById('brain-select').addEventListener('change', (e)=>{
+  aiBrain = e.target.value;
+  document.getElementById('openai-key-row').style.display = (aiBrain === 'openai') ? 'block' : 'none';
+  document.getElementById('claude-key-row').style.display = (aiBrain === 'claude') ? 'block' : 'none';
+  document.getElementById('gemini-key-row').style.display = (aiBrain === 'gemini') ? 'block' : 'none';
+});
+document.getElementById('openai-key-input').addEventListener('input', (e)=>{
+  openaiApiKey = e.target.value.trim();
+});
+document.getElementById('claude-key-input').addEventListener('input', (e)=>{
+  claudeApiKey = e.target.value.trim();
+});
+document.getElementById('gemini-key-input').addEventListener('input', (e)=>{
+  geminiApiKey = e.target.value.trim();
+});
+
+async function callTutor(userMessage){
+  setStatus('thinking…');
+  const contextParts = [];
+  if(pdfText && conversationHistory.length===0){
+    contextParts.push(`SOURCE DOCUMENT (${pdfFileName}), extracted text:\n${pdfText.slice(0,15000)}`);
+  }
+  contextParts.push(userMessage);
+  const fullUserContent = contextParts.join('\n\n---\n\n');
+  conversationHistory.push({role:'user', content: fullUserContent});
+
+  let result;
+  if(aiBrain === 'openai') result = await callOpenAI();
+  else if(aiBrain === 'gemini') result = await callGemini();
+  else result = await callClaude();
+
+  if(!result.ok){
+    conversationHistory.pop(); // don't poison history with a failed turn
+    setStatus(result.status || 'error — see console');
+    return { speech: result.errorSpeech, board: [] };
+  }
+
+  try{
+    const parsed = JSON.parse(result.raw);
+    conversationHistory.push({role:'assistant', content: result.raw});
+    setStatus('idle');
+    return parsed;
+  } catch(jsonErr){
+    console.error('Model output was not valid JSON. Raw text:', result.raw);
+    setStatus('malformed JSON — see console');
+    conversationHistory.pop();
+    return { speech:"The lecture content came back malformed. Check the console to see exactly what came back.", board:[] };
+  }
+}
+
+async function callClaude(){
+  let response, data;
+  const headers = {"Content-Type":"application/json"};
+  // Inside claude.ai, the fetch to api.anthropic.com is proxied/allowed with
+  // no key needed. Outside claude.ai (self-hosted), a real API key must be
+  // supplied and sent directly, along with the header Anthropic requires for
+  // browser-originated requests.
+  if(claudeApiKey){
+    headers["x-api-key"] = claudeApiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers["anthropic-dangerous-direct-browser-access"] = "true";
+  }
+  try{
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers,
+      body: JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:2000,
+        system: SYSTEM_PROMPT,
+        messages: conversationHistory
+      })
+    });
+  } catch(networkErr){
+    console.error('Network-level failure calling Claude:', networkErr);
+    const hint = runningInsideClaudeAi
+      ? " Check the browser console (F12) for the exact error."
+      : " Since this isn't running inside claude.ai, you likely need to paste an Anthropic API key under \"AI brain\" in the menu.";
+    return { ok:false, status:'network error — see console', errorSpeech:`The request never reached the tutoring model — that's a network-level failure.${hint}` };
+  }
+
+  try{ data = await response.json(); }
+  catch(parseErr){
+    console.error('Response was not valid JSON. Raw response:', response);
+    return { ok:false, status:'bad response — see console', errorSpeech:"The server responded, but not with valid JSON. Check the console." };
+  }
+
+  if(!response.ok){
+    console.error('Claude API returned an error status:', response.status, data);
+    const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
+    return { ok:false, status:`API error ${response.status} — see console`, errorSpeech:`The tutoring model returned an error: ${msg}` };
+  }
+
+  if(!data.content || !Array.isArray(data.content)){
+    console.error('Unexpected response shape:', data);
+    return { ok:false, status:'unexpected response — see console', errorSpeech:"The response came back in a shape I didn't expect. Check the console." };
+  }
+
+  const textBlock = data.content.find(b=>b.type==='text');
+  let raw = textBlock ? textBlock.text : '{}';
+  raw = raw.trim().replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
+  return { ok:true, raw };
+}
+
+async function callOpenAI(){
+  if(!openaiApiKey){
+    return { ok:false, status:'missing API key', errorSpeech:"You've selected OpenAI as the brain, but no API key is entered yet. Open the menu and paste your OpenAI API key under \"AI brain\"." };
+  }
+  let response, data;
+  try{
+    response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization": `Bearer ${openaiApiKey}`
+      },
+      body: JSON.stringify({
+        model:"gpt-4o",
+        response_format:{ type:"json_object" },
+        max_tokens:2000,
+        messages: [
+          { role:"system", content: SYSTEM_PROMPT },
+          ...conversationHistory
+        ]
+      })
+    });
+  } catch(networkErr){
+    console.error('Network-level failure calling OpenAI:', networkErr);
+    const hint = runningInsideClaudeAi
+      ? " That's expected here — claude.ai's artifact sandbox only allows requests to api.anthropic.com, so OpenAI can't be reached from inside claude.ai at all. Run this file outside claude.ai (locally, or on your own site) for OpenAI to work."
+      : " Check the browser console (F12) for the exact error, and confirm your OpenAI key is correct.";
+    return { ok:false, status:'network error — see console', errorSpeech:`The request never reached OpenAI — that's a network-level failure.${hint}` };
+  }
+
+  try{ data = await response.json(); }
+  catch(parseErr){
+    console.error('OpenAI response was not valid JSON. Raw response:', response);
+    return { ok:false, status:'bad response — see console', errorSpeech:"OpenAI's server responded, but not with valid JSON. Check the console." };
+  }
+
+  if(!response.ok){
+    console.error('OpenAI API returned an error status:', response.status, data);
+    const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
+    const hint = response.status === 401 ? " Double-check the API key you pasted in." : '';
+    return { ok:false, status:`API error ${response.status} — see console`, errorSpeech:`OpenAI returned an error: ${msg}${hint}` };
+  }
+
+  const choice = data.choices && data.choices[0];
+  const raw = choice && choice.message && choice.message.content;
+  if(!raw){
+    console.error('Unexpected OpenAI response shape:', data);
+    return { ok:false, status:'unexpected response — see console', errorSpeech:"OpenAI's response came back in a shape I didn't expect. Check the console." };
+  }
+  return { ok:true, raw: raw.trim() };
+}
+
+async function callGemini(){
+  if(!geminiApiKey){
+    return { ok:false, status:'missing API key', errorSpeech:"You've selected Gemini as the brain, but no API key is entered yet. Open the menu and paste your free Gemini API key under \"AI brain\" (get one at aistudio.google.com/apikey)." };
+  }
+  // Gemini's REST format differs from the Claude/OpenAI shared history shape:
+  // roles are "user"/"model" (not "assistant"), content is nested under
+  // "parts", and the system prompt is a separate top-level field rather than
+  // a message in the array. Translate conversationHistory into that shape
+  // without altering the shared history structure used by the other brains.
+  const geminiContents = conversationHistory.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  let response, data;
+  try{
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-goog-api-key": geminiApiKey
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: geminiContents,
+          generationConfig: {
+            response_mime_type: "application/json",
+            maxOutputTokens: 2000
+          }
+        })
+      }
+    );
+  } catch(networkErr){
+    console.error('Network-level failure calling Gemini:', networkErr);
+    const hint = runningInsideClaudeAi
+      ? " That's expected here — claude.ai's artifact sandbox only allows requests to api.anthropic.com, so Gemini can't be reached from inside claude.ai. Run this file outside claude.ai (locally, or on your own site) for Gemini to work."
+      : " Check the browser console (F12) for the exact error, and confirm your Gemini key is correct.";
+    return { ok:false, status:'network error — see console', errorSpeech:`The request never reached Gemini — that's a network-level failure.${hint}` };
+  }
+
+  try{ data = await response.json(); }
+  catch(parseErr){
+    console.error('Gemini response was not valid JSON. Raw response:', response);
+    return { ok:false, status:'bad response — see console', errorSpeech:"Gemini's server responded, but not with valid JSON. Check the console." };
+  }
+
+  if(!response.ok){
+    console.error('Gemini API returned an error status:', response.status, data);
+    const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
+    const hint = response.status === 400 || response.status === 403 ? " Double-check the API key you pasted in." : (response.status === 429 ? " You've likely hit the free-tier rate limit (requests per minute or per day) — wait a bit and try again." : '');
+    return { ok:false, status:`API error ${response.status} — see console`, errorSpeech:`Gemini returned an error: ${msg}${hint}` };
+  }
+
+  const candidate = data.candidates && data.candidates[0];
+  const part = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0];
+  const raw = part && part.text;
+  if(!raw){
+    console.error('Unexpected Gemini response shape:', data);
+    // A common non-error case: the response was cut off or blocked by safety
+    // filters, which shows up as a missing parts array with a finishReason.
+    const finishReason = candidate && candidate.finishReason;
+    const extra = finishReason ? ` (finish reason: ${finishReason})` : '';
+    return { ok:false, status:'unexpected response — see console', errorSpeech:`Gemini's response came back in a shape I didn't expect${extra}. Check the console.` };
+  }
+  return { ok:true, raw: raw.trim() };
+}
+
+async function runTeachingTurn(userMessage, displayText){
+  // displayText lets callers show a friendlier line in the transcript than
+  // the full prompt sent to the model (used by the quiz-answer flow).
+  addTranscriptMsg('user', displayText !== undefined ? displayText : userMessage);
+  const result = await callTutor(userMessage);
+  // Only advance to a fresh block of the board when there's actually new
+  // content to draw — a pure follow-up discussion with no board content
+  // stays on the current view instead of jumping to blank space.
+  if(result.board && result.board.length) enqueueCommandsAtCursor(result.board);
+  if(result.speech){ addTranscriptMsg('tutor', result.speech); speak(result.speech); }
+  if(result.quiz) addQuizCard(result.quiz);
+  autoSaveSession();
+}
+
+/* =========================================================
+   SESSION PERSISTENCE
+   ========================================================= */
+let currentSessionId = 'session_' + Date.now();
+let currentSessionTitle = null;
+
+function transcriptToHtmlSnapshot(){ return transcriptEl.innerHTML; }
+
+async function saveSession(promptForName){
+  try{
+    let title = currentSessionTitle;
+    if(promptForName || !title){
+      title = prompt('Name this session:', title || (pdfFileName ? pdfFileName.replace(/\.pdf$/i,'') : 'Untitled session'));
+      if(title===null) return;
+      currentSessionTitle = title || 'Untitled session';
+    }
+    await persistSession();
+    setStatus('session saved');
+  } catch(err){ console.error('Save failed:', err); setStatus('save failed — see console'); }
+}
+
+async function persistSession(){
+  const payload = {
+    id: currentSessionId,
+    title: currentSessionTitle || (pdfFileName ? pdfFileName.replace(/\.pdf$/i,'') : 'Untitled session'),
+    savedAt: Date.now(),
+    pdfFileName, pdfText: pdfText ? pdfText.slice(0,15000) : '',
+    conversationHistory, drawnCommands, camera,
+    blockCount, boardCursor,
+    transcriptHtml: transcriptToHtmlSnapshot()
+  };
+  await window.storage.set('session:' + currentSessionId, JSON.stringify(payload), false);
+  refreshSessionList();
+}
+
+function autoSaveSession(){ if(conversationHistory.length>0) persistSession().catch(e=>console.error('Autosave failed:',e)); }
+
+async function refreshSessionList(){
+  const listEl = document.getElementById('session-list');
+  try{
+    const result = await window.storage.list('session:', false);
+    const keys = (result && result.keys) ? result.keys : [];
+    if(keys.length===0){ listEl.innerHTML = '<div class="empty-note">No saved sessions yet.</div>'; return; }
+    const items = [];
+    for(const key of keys){
+      try{ const rec = await window.storage.get(key, false); if(rec) items.push(JSON.parse(rec.value)); } catch(e){}
+    }
+    items.sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+    listEl.innerHTML = '';
+    items.forEach(item=>{
+      const div = document.createElement('div'); div.className='session-item';
+      const date = new Date(item.savedAt);
+      div.innerHTML = `<span class="s-name">${escapeHtml(item.title||'Untitled')}</span><span class="s-date">${date.toLocaleDateString()}</span>`;
+      div.addEventListener('click', ()=> loadSession(item));
+      listEl.appendChild(div);
+    });
+  } catch(err){ console.error('Listing sessions failed:', err); listEl.innerHTML = '<div class="empty-note">Could not load saved sessions.</div>'; }
+}
+
+function resetUploadZoneUI(){
+  uploadZone.classList.remove('has-file');
+  uploadZone.innerHTML = `Drop a PDF, or click to import a chapter, slide deck or notes.<input type="file" id="pdf-input" accept="application/pdf">`;
+  document.getElementById('pdf-input').addEventListener('change', (e)=>{ if(e.target.files.length) handlePdfFile(e.target.files[0]); });
+}
+
+function loadSession(item){
+  currentSessionId = item.id; currentSessionTitle = item.title;
+  pdfFileName = item.pdfFileName || ''; pdfText = item.pdfText || '';
+  conversationHistory = item.conversationHistory || [];
+  drawnCommands = item.drawnCommands || [];
+  if(item.camera) Object.assign(camera, item.camera);
+  blockCount = item.blockCount || 0;
+  if(item.boardCursor) Object.assign(boardCursor, item.boardCursor);
+  transcriptEl.innerHTML = item.transcriptHtml || '<div class="empty-note">No transcript in this session.</div>';
+  if(pdfFileName){
+    uploadZone.classList.add('has-file');
+    uploadZone.innerHTML = `<div class="file-name">📄 ${escapeHtml(pdfFileName)}</div><div class="file-meta">restored from saved session</div>`;
+  } else { resetUploadZoneUI(); }
+  redrawAll();
+  setStatus('session loaded');
+  closePanel();
+}
+
+document.getElementById('btn-save').addEventListener('click', ()=> saveSession(true));
+document.getElementById('btn-new-session').addEventListener('click', ()=>{
+  currentSessionId = 'session_' + Date.now(); currentSessionTitle = null;
+  pdfText=''; pdfFileName='';
+  conversationHistory=[]; drawQueue=[]; drawnCommands=[];
+  camera.x=500; camera.y=300; camera.scale=1;
+  blockCount=0; boardCursor.x=0; boardCursor.y=0;
+  clearBoard();
+  transcriptEl.innerHTML = '<div class="empty-note">Your lecture transcript and quiz questions will appear here as we go.</div>';
+  resetUploadZoneUI();
+  setStatus('new session');
+});
+
+/* =========================================================
+   SIDE PANEL TOGGLES
+   ========================================================= */
+const sidePanel = document.getElementById('side-panel');
+const overlay = document.getElementById('overlay');
+function openPanel(){ sidePanel.classList.add('open'); overlay.classList.add('open'); }
+function closePanel(){ sidePanel.classList.remove('open'); overlay.classList.remove('open'); }
+document.getElementById('btn-menu').addEventListener('click', openPanel);
+document.getElementById('btn-panel-close').addEventListener('click', closePanel);
+overlay.addEventListener('click', closePanel);
+document.getElementById('btn-toggle-transcript').addEventListener('click', openPanel);
+
+/* =========================================================
+   WIRE UP CONTROLS
+   ========================================================= */
+document.getElementById('btn-teach').addEventListener('click', ()=>{
+  const val = document.getElementById('topic-input').value.trim();
+  if(!val) return;
+  runTeachingTurn(val);
+  document.getElementById('topic-input').value = '';
+  closePanel();
+});
+document.getElementById('btn-quiz').addEventListener('click', ()=>{
+  const val = document.getElementById('topic-input').value.trim();
+  const prompt = val ? `Please quiz me on: ${val}` : (pdfText ? `Please quiz me on the uploaded document.` : `Please quiz me on the most recent topic we discussed.`);
+  runTeachingTurn(prompt);
+  closePanel();
+});
+function handleAsk(text){
+  if(!text || !text.trim()) return;
+  runTeachingTurn(text.trim());
+  document.getElementById('ask-input').value = '';
+}
+document.getElementById('btn-ask').addEventListener('click', ()=> handleAsk(document.getElementById('ask-input').value));
+document.getElementById('ask-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') handleAsk(e.target.value); });
+
+/* =========================================================
+   INIT
+   ========================================================= */
+document.getElementById('voice-select').addEventListener('change', ()=>{
+  if(currentUtteranceText) speak(currentUtteranceText); // re-speak current line in the new voice
+});
+
+resizeCanvas();
+setStatus('idle');
+refreshSessionList();
+</script>
+
+</body>
+</html>
